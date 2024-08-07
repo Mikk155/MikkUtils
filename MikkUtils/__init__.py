@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.
 
 import struct
 import os
+import re
 import platform
 from json import loads as __json_loads__
 
@@ -248,3 +249,55 @@ def HALFLIFE() -> str:
         return halflife
     except Exception:
         raise Exception( 'Can not find Steam installation\nPlease define halflife="(Path to halflife) in the main script.')
+
+
+#========================================================
+# pak
+#========================================================
+
+class pak:
+    '''
+    Manage .pak files
+    '''
+
+    def __init__(self, filename):
+        self.__filename__ = filename
+        self.__files__ = {}
+        self.__read_pak_file__()
+
+    def __read_pak_file__(self):
+        with open(self.__filename__, 'rb') as f:
+            header = f.read(12)
+            if header[:4] != b'PACK':
+                raise ValueError('Not a valid PAK file')
+
+            (dir_offset, dir_length) = struct.unpack('ii', header[4:])
+            f.seek(dir_offset)
+            dir_data = f.read(dir_length)
+
+            num_files = dir_length // 64
+            for i in range(num_files):
+                entry = dir_data[i*64:(i+1)*64]
+                name = entry[:56].rstrip(b'\x00').decode('latin-1')
+                (offset, length) = struct.unpack('ii', entry[56:])
+                self.__files__[name] = (offset, length)
+
+    def extract(self, extract_to:str):
+        '''
+        Extract pak resources to the destination folder
+        '''
+
+        with open(self.__filename__, 'rb') as f:
+            for name, (offset, length) in self.__files__.items():
+                f.seek(offset)
+                data = f.read(length)
+
+                extract_path = os.path.join(extract_to, name)
+                os.makedirs(os.path.dirname(extract_path), exist_ok=True)
+
+                if os.path.exists(extract_path):
+                    print(f"[pak] {name} exists. skipping...")
+                    continue
+
+                with open(extract_path, 'wb') as out_file:
+                    out_file.write(data)
