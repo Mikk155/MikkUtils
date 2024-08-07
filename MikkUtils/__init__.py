@@ -23,6 +23,8 @@ DEALINGS IN THE SOFTWARE.
 """
 
 import struct
+import os
+import platform
 from json import loads as __json_loads__
 
 #========================================================
@@ -184,3 +186,65 @@ class Vector:
 
     def __repr__(self):
         return f"Vector( {self.x}, {self.y}, {self.z} )"
+
+#========================================================
+# Steam Path
+#========================================================
+
+def STEAM() -> str:
+
+    '''
+    Get steam's installation path
+    '''
+
+    __OS__ = platform.system()
+
+    if __OS__ == "Windows":
+        __paths__ = [
+            os.path.expandvars( r"%ProgramFiles(x86)%\Steam" ),
+            os.path.expandvars( r"%ProgramFiles%\Steam" )
+        ]
+
+        for __path__ in __paths__:
+            if os.path.exists( __path__ ):
+                return __path__
+
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
+                return winreg.QueryValueEx(key, "SteamPath")[0]
+        except (ImportError, FileNotFoundError, OSError, PermissionError):
+            return None
+
+    elif __OS__ == "Linux":
+        __paths__ = [
+            "/usr/bin/steam",
+            "/usr/local/bin/steam"
+        ]    
+
+        for __path__ in __paths__:
+            if os.path.exists( __path__ ):
+                # Intentar obtener el directorio del ejecutable
+                return os.path.dirname( os.path.abspath( __path__ ) )
+        return None
+
+    else:
+        raise NotImplementedError(f"Unsupported Operative System {__OS__}")
+
+def HALFLIFE() -> str:
+    '''
+    Get "Half-Life" folder within a steam installation
+    '''
+
+    __STEAM__ = STEAM()
+
+    if __STEAM__:
+        __HALFLIFE__ = f'{__STEAM__}\steamapps\common\Half-Life'
+        if os.path.exists( __HALFLIFE__ ):
+            return __HALFLIFE__
+
+    try:
+        from __main__ import halflife
+        return halflife
+    except Exception:
+        raise Exception( 'Can not find Steam installation\nPlease define halflife="(Path to halflife) in the main script.')
