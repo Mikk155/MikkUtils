@@ -22,10 +22,9 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
-import struct
-import os
-import re
-import platform
+import os as __os__
+import platform as __platform__
+import struct as __struct__
 from json import loads as __json_loads__
 
 #========================================================
@@ -198,16 +197,16 @@ def STEAM() -> str:
     Get steam's installation path
     '''
 
-    __OS__ = platform.system()
+    __OS__ = __platform__.system()
 
     if __OS__ == "Windows":
         __paths__ = [
-            os.path.expandvars( r"%ProgramFiles(x86)%\Steam" ),
-            os.path.expandvars( r"%ProgramFiles%\Steam" )
+            __os__.path.expandvars( r"%ProgramFiles(x86)%\Steam" ),
+            __os__.path.expandvars( r"%ProgramFiles%\Steam" )
         ]
 
         for __path__ in __paths__:
-            if os.path.exists( __path__ ):
+            if __os__.path.exists( __path__ ):
                 return __path__
 
         try:
@@ -224,9 +223,9 @@ def STEAM() -> str:
         ]    
 
         for __path__ in __paths__:
-            if os.path.exists( __path__ ):
+            if __os__.path.exists( __path__ ):
                 # Intentar obtener el directorio del ejecutable
-                return os.path.dirname( os.path.abspath( __path__ ) )
+                return __os__.path.dirname( __os__.path.abspath( __path__ ) )
         return None
 
     else:
@@ -241,7 +240,7 @@ def HALFLIFE() -> str:
 
     if __STEAM__:
         __HALFLIFE__ = f'{__STEAM__}\steamapps\common\Half-Life'
-        if os.path.exists( __HALFLIFE__ ):
+        if __os__.path.exists( __HALFLIFE__ ):
             return __HALFLIFE__
 
     try:
@@ -271,7 +270,7 @@ class pak:
             if header[:4] != b'PACK':
                 raise ValueError('Not a valid PAK file')
 
-            (dir_offset, dir_length) = struct.unpack('ii', header[4:])
+            (dir_offset, dir_length) = __struct__.unpack('ii', header[4:])
             f.seek(dir_offset)
             dir_data = f.read(dir_length)
 
@@ -279,7 +278,7 @@ class pak:
             for i in range(num_files):
                 entry = dir_data[i*64:(i+1)*64]
                 name = entry[:56].rstrip(b'\x00').decode('latin-1')
-                (offset, length) = struct.unpack('ii', entry[56:])
+                (offset, length) = __struct__.unpack('ii', entry[56:])
                 self.__files__[name] = (offset, length)
 
     def extract(self, extract_to:str):
@@ -292,10 +291,10 @@ class pak:
                 f.seek(offset)
                 data = f.read(length)
 
-                extract_path = os.path.join(extract_to, name)
-                os.makedirs(os.path.dirname(extract_path), exist_ok=True)
+                extract_path = __os__.path.join(extract_to, name)
+                __os__.makedirs(__os__.path.dirname(extract_path), exist_ok=True)
 
-                if os.path.exists(extract_path):
+                if __os__.path.exists(extract_path):
                     print(f"[pak] {name} exists. skipping...")
                     continue
 
