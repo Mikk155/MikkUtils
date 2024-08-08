@@ -23,8 +23,9 @@ DEALINGS IN THE SOFTWARE.
 """
 
 import os as __os__
-import platform as __platform__
+from platform import system as __platform_system__
 import struct as __struct__
+from shutil import copy as __shutil_copy__
 from json import loads as __json_loads__
 
 #========================================================
@@ -197,7 +198,7 @@ def STEAM() -> str:
     Get steam's installation path
     '''
 
-    __OS__ = __platform__.system()
+    __OS__ = __platform_system__()
 
     if __OS__ == "Windows":
         __paths__ = [
@@ -300,3 +301,54 @@ class pak:
 
                 with open(extract_path, 'wb') as out_file:
                     out_file.write(data)
+
+#========================================================
+# Blue-Shift BSP Conversion
+#========================================================
+
+class __DHeader__:
+    def __init__(self):
+        self.version = 0
+        self.lumps = [ [ 0, 0 ] for _ in range( 15 )]
+
+def convert_blueshift_bsp( bsp_path : str, bsp_output : str ):
+    '''
+    Converts a Blue-Shift BSP to a generic goldsource BSP
+    '''
+
+    if bsp_path != bsp_output:
+        __shutil_copy__( bsp_path, bsp_output )
+
+    __LUMP_HEADER__ = 15
+    __VERSION__ = 0
+    __LUMPS__ = 1
+
+    with open( bsp_output, 'rb+' ) as file:
+
+        start = file.tell()
+
+        if start == -1:
+            raise Exception( f"Error getting start position in \"{file}\"" )
+
+        header = [ 0, [ [ 0, 0 ] for _ in range( __LUMP_HEADER__ ) ] ]
+
+        data = file.read( 4 + 8 * __LUMP_HEADER__ )
+        header[__VERSION__] = __struct__.unpack('i', data[:4] )[0]
+
+        for i in range( __LUMP_HEADER__ ):
+            fileofs, filelen = __struct__.unpack( 'ii', data[ 4 + i * 8:4 + ( i + 1 ) * 8 ] )
+            header[__LUMPS__][i] = [ fileofs, filelen ]
+        
+        if header[__LUMPS__][1][0] == 124:
+            file.close() # Already converted, don't swap
+            return
+
+        header[__LUMPS__][0], header[__LUMPS__][1] = header[__LUMPS__][1], header[__LUMPS__][0]
+        file.seek(start, __os__.SEEK_SET)
+
+        data = __struct__.pack( 'i', header[__VERSION__] )
+        for lump in header[__LUMPS__]:
+            data += __struct__.pack('ii', lump[0], lump[1])
+
+        file.write(data)
+
