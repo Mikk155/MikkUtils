@@ -26,7 +26,7 @@ import os as __os__
 from platform import system as __platform_system__
 import struct as __struct__
 from shutil import copy as __shutil_copy__
-from json import loads as __json_loads__
+from json import loads as __json_loads__, dumps as __json_dumps__, load as __json_load__
 
 #========================================================
 # jsonc
@@ -383,3 +383,276 @@ def wildcard( compare : str, comparator : str, wildcard : str = '*' ) -> bool:
             __index__ = compare.find( __p__, __index__ )
 
     return __matched__
+
+#========================================================
+# Entity, entity blocks from entity lumps
+#========================================================
+
+class Entity:
+    '''
+    Entity is basically a dict representing a entity block from a entity lump in a BSP
+
+    Access any key-value with a dot, returns None if not set, set None to remove
+    '''
+    def __init__( self, KeyValueData=None ):
+        self.KeyValueData = KeyValueData if isinstance( KeyValueData, dict ) else KeyValueData.ToDict() if isinstance( KeyValueData, Entity ) else {}
+
+    def ToDict( self ):
+        """
+            Converts this Entity class to a dict.
+        """
+        return self.KeyValueData
+
+    def get( self, value:str ):
+        self.KeyValueData.get( value )
+
+    def copy(self):
+        return Entity( self.KeyValueData.copy() )
+
+    def set( self, value:str ):
+        self.KeyValueData[ value ] = value
+
+    def pop( self, value:str ):
+        self.KeyValueData.pop( value, '' )
+
+    def __getattr__( self, key ):
+        return str( self.KeyValueData.get( key, "" ) ) if key in self.KeyValueData else None
+
+    def __setattr__( self, key, value ):
+        if key == 'KeyValueData':
+            super().__setattr__( key, value )
+        elif value == None:
+            self.KeyValueData.pop( key, '' )
+        else:
+            self.KeyValueData[ key ] = str( value )
+
+    def remove( self ):
+        """
+        Removes this entity from the entity data
+        """
+        self.KeyValueData.clear()
+
+    def __repr__(self):
+        return str( self.KeyValueData )
+
+#========================================================
+# Ripent, BSP entity lump
+#========================================================
+
+__RIPENT_NONE__ = 0
+__RIPENT_DATA__ = 1
+__RIPENT_JSON__ = 2
+__RIPENT_BSP__ = 3
+__RIPENT_MAP__ = 4
+
+class Ripent:
+    '''
+    Ripent, access to BSP's entity lumps
+    '''
+    def __init__( self, input : str | list[Entity] ):
+        '''
+        ``input`` Full path to a BSP, MAP or JSON file, it could also be a list[Entity] wich is the representation of the JSON format
+        '''
+
+        if isinstance( input, list ):
+            self.format = __RIPENT_NONE__
+        elif input.endswith( '.bsp' ):
+            self.format = __RIPENT_BSP__
+        elif input.endswith( '.map' ):
+            self.format = __RIPENT_MAP__
+        elif input.endswith( '.json' ):
+            self.format = __RIPENT_JSON__
+        else:
+            self.format = __RIPENT_NONE__
+
+        if isinstance( input, str ):
+            self.path = input
+
+    def __manipulate_lump__( self, ent_data = None ) -> list[Entity]:
+
+        with open( self.path, 'rb+' ) as bsp_file:
+
+            bsp_file.read(4) # BSP version.
+            entities_lump_start_pos = bsp_file.tell()
+            read_start = int.from_bytes( bsp_file.read(4), byteorder='little' )
+            read_len = int.from_bytes( bsp_file.read(4), byteorder='little' )
+            bsp_file.seek( read_start )
+
+            if ent_data != None:
+
+                newdata = ''
+
+                for entblock in ent_data:
+
+                    if isinstance( entblock, Entity ):
+                        entblock = entblock.ToDict()
+
+                    if len(entblock) <= 0:
+                        continue
+
+                    newdata += '{\n'
+                    for key, value in entblock.items():
+                        newdata += f'"{key}" "{value}"\n'
+                    newdata += '}\n'
+
+                writedata_bytes = newdata.encode('ascii')
+                new_len = len(writedata_bytes)
+
+                if new_len <= read_len:
+                    bsp_file.write(writedata_bytes)
+                    if new_len < read_len:
+                        bsp_file.write(b'\x00' * (read_len - new_len))
+                else:
+                    bsp_file.seek(0, __os__.SEEK_END)
+                    new_start = bsp_file.tell()
+                    bsp_file.write(writedata_bytes)
+
+                    bsp_file.seek(entities_lump_start_pos)
+                    bsp_file.write(new_start.to_bytes(4, byteorder='little'))
+                    bsp_file.write(new_len.to_bytes(4, byteorder='little'))
+            else:
+
+                map_entities:str
+                entities_lump = bsp_file.read( read_len )
+
+                try:
+                    map_entities = entities_lump.decode('ascii', errors='strict').splitlines()
+                except UnicodeDecodeError:
+                    map_entities = entities_lump.decode('utf-8', errors='ignore').splitlines()
+                    print( f'Possible broken entity data in a map, Check and patch "{self.path}"' )
+                    #raise Warning( f'Possible broken entity data in a map, Check and patch "{self.path}"' )
+
+                entblock = {}
+                entdata = []
+                oldline = ''
+
+                for line in map_entities:
+
+                    if line == '{':
+                        continue
+
+                    line = line.strip()
+
+                    if not line.endswith( '"' ):
+                        oldline = line
+                    elif oldline != '' and not line.startswith( '"' ):
+                        line = f'{oldline}{line}'
+
+                    __LastIndex__ = 0
+                    while line.find( '\\', __LastIndex__ ) != -1:
+                        __LastIndex__ = line.find( '\\', __LastIndex__ )
+                        if line[ __LastIndex__ -1 : __LastIndex__ ] != '\\' and line[ __LastIndex__ + 1 : __LastIndex__ + 2 ] != '\\':
+                            line = line[ : __LastIndex__ + 1 ] + line[ __LastIndex__ : ]
+                        __LastIndex__ += 2
+
+                    line = line.strip( '"' )
+
+                    if not line or line == '':
+                        continue
+
+                    if line.startswith( '}' ): # startswith due to [NULL]
+                        try:
+                            lump = __json_dumps__( entblock )
+                            block = __json_loads__( lump )
+                            entity = Entity( block )
+                            entdata.append( entity )
+                            entblock.clear()
+                        except Exception:
+                            entblock.clear()
+                    else:
+                        keyvalues = line.split( '" "' )
+                        if len( keyvalues ) == 2:
+                            entblock[ keyvalues[0] ] = keyvalues[1]
+                return entdata
+        return None
+
+    def __write_json__( self, entdata ):
+
+        __fformat__ = '.bsp' if self.format == __RIPENT_BSP__ else '.map' if self.format == __RIPENT_MAP__ else None
+
+        if __fformat__:
+
+            with open( self.path.replace( __fformat__, '.json' ), 'w' ) as jsonfile:
+
+                jsonfile.write( '[\n' )
+                FirstBlockOf = True
+                FirstKeyOf = True
+
+                for entblock in entdata:
+
+                    if FirstBlockOf:
+                        FirstBlockOf = False
+                    else:
+                        jsonfile.write( ',\n' )
+
+                    FirstKeyOf = True
+
+                    jsonfile.write( '\t{\n' )
+
+                    for key, value in entblock.ToDict().items():
+
+                        if FirstKeyOf:
+                            FirstKeyOf = False
+                        else:
+                            jsonfile.write( ',\n' )
+
+                        jsonfile.write( f'\t\t"{key}": "{value}"' )
+
+                    jsonfile.write( '\n\t}' )
+
+                jsonfile.write( '\n]\n' )
+                jsonfile.close()
+
+    # Dafuk why can not i name it "import" >:[
+    def import_( self, entity_data : list[Entity] = None, delete_json : bool = False ):
+        '''
+        Import the entity data if this Ripent instance is a BSP or MAP file
+
+        ``entity_data`` if **None** we'll look for a valid JSON file within the BSP/MAP Path
+
+        ``delete_json`` if **True** delete the json file used, if any.
+        '''
+
+        if not entity_data:
+
+            __fformat__ = '.bsp' if self.format == __RIPENT_BSP__ else '.map' if self.format == __RIPENT_MAP__ else None
+
+            if __fformat__:
+
+                jsonpath = self.path.replace( __fformat__, '.json' )
+
+                if __os__.path.exists( jsonpath ):
+
+                    with open( jsonpath, 'r' ) as jsonfile:
+                        entity_data = __json_load__( jsonfile )
+                        self.__manipulate_lump__( entity_data )
+                        jsonfile.close()
+
+                    if delete_json:
+                        __os__.remove( jsonpath )
+
+                else:
+                    print( f"{jsonpath} Doesn't exists!" )
+
+        else:
+            self.__manipulate_lump__( entity_data )
+
+    def export( self, create_json : bool = False ) -> list[Entity] | None:
+        '''
+        Export the entity data if this Ripent instance is a BSP or MAP file else returns **None**
+
+        ``create_json`` if **True** a json file will be generated at the BSP/MAP destination
+        '''
+
+        if self.format != __RIPENT_MAP__ and self.format != __RIPENT_BSP__:
+            return None
+
+        entdata = self.__manipulate_lump__()
+
+        if create_json:
+            self.__write_json__( entdata )
+
+        return entdata
+
+    def __repr__(self):
+        return '{' + f'\'format\': \'{self.format}\', \'path\': \'{self.path}\'' + '}'
