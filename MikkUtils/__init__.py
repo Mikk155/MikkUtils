@@ -352,3 +352,34 @@ def convert_blueshift_bsp( bsp_path : str, bsp_output : str ):
 
         file.write(data)
 
+#========================================================
+# starting, ending and midde wildcarding
+#========================================================
+
+def wildcard( compare : str, comparator : str, wildcard : str = '*' ) -> bool:
+    '''
+    Compare ``compare`` with ``comparator`` and see if they fully match or partial match by starting, ending or middle ``wildcard``
+    '''
+    if compare == comparator:
+        return True
+
+    elif wildcard not in comparator:
+        return False
+
+    __parts__ = comparator.split( wildcard )
+
+    for __i__, __p__ in enumerate( __parts__ ):
+        if __p__ == '':
+            __parts__.pop( __i__ )
+
+    __index__ : int = 0
+    __matched__ : bool = True if len( __parts__ ) > 0 else False
+
+    for __p__ in __parts__:
+        if compare.find( __p__, __index__ ) < __index__:
+            __matched__ = False
+            break
+        else:
+            __index__ = compare.find( __p__, __index__ )
+
+    return __matched__
